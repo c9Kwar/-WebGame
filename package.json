@@ -1,0 +1,15 @@
+{
+  "name": "the-still-archive",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "잔향 서고 — 서두르지 않아도 쌓이는 수집형 성장 게임",
+  "scripts": {
+    "dev": "python3 -m http.server 8000 --bind 0.0.0.0",
+    "test": "node --test tests/game.test.js",
+    "test:browser": "node tests/browser.mjs",
+    "balance": "node tests/balance.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "잔향 서고 · The Still Archive",
+  "short_name": "잔향 서고",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f0e8",
+  "theme_color": "#203c37",
+  "icons": [{ "src": "./assets/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
