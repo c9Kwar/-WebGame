@@ -31,12 +31,50 @@ function toast(text, kind = '') {
   const el = document.createElement('div'); el.className = `toast ${kind}`; el.textContent = text;
   $('#toasts').append(el); setTimeout(() => el.remove(), 4500);
 }
-function chime() {
+// A separate, non-blocking stage survives page renders during continuous exploration.
+let discoveryTimer;
+function clearDiscovery() {
+  clearTimeout(discoveryTimer);
+  document.querySelector('.discovery-stage')?.remove();
+}
+function revealDiscovery(result) {
+  clearDiscovery();
+  if (document.hidden) return;
+  const relic = RELICS.find(r => r.id === result.relic), rarity = RARITIES[relic.rarity];
+  const reduced = state.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const count = reduced ? 0 : {common: 6, rare: 16, epic: 28}[relic.rarity];
+  const duration = {common: 1600, rare: 2200, epic: 2600}[relic.rarity];
+  const stage = document.createElement('section');
+  stage.className = `discovery-stage discovery-${relic.rarity}${reduced ? ' discovery-still' : ''}`;
+  stage.style.setProperty('--reveal-duration', `${duration}ms`);
+  stage.setAttribute('aria-label', `${rarity.name} 유물 발견`);
+  stage.innerHTML = `<div class="discovery-veil" aria-hidden="true"></div>
+    <div class="discovery-halo" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="discovery-motes" aria-hidden="true">${Array.from({length:count},(_,i)=>`<i style="--angle:${i*137.5}deg;--distance:${110+(i%5)*32}px;--delay:${(i%7)*45}ms"></i>`).join('')}</div>
+    <div class="discovery-record">
+      <div class="discovery-caption">${relic.rarity==='epic'?'시간이 멈추고, 영원이 남았다':relic.rarity==='rare'?'잊힌 기억이 빛을 되찾았다':'작은 흔적이 서고에 닿았다'}</div>
+      <div class="discovery-art" aria-hidden="true">${relicArt(relic,'discovery')}<span class="discovery-seal">${mark}</span></div>
+      <p class="discovery-grade">${rarity.label} <span>· ${rarity.name}</span></p>
+      <h2>${esc(relic.name)}</h2>
+      <p class="discovery-note">${result.isNew?'처음 만난 기록':'다시 닿은 기억 · 중복 유물 획득'}</p>
+      <button class="discovery-dismiss" type="button" aria-label="발견 연출 닫기">서고로 돌아가기 <span aria-hidden="true">↗</span></button>
+    </div>`;
+  stage.querySelector('button').addEventListener('click', clearDiscovery);
+  document.body.append(stage);
+  discoveryTimer = setTimeout(clearDiscovery, duration);
+}
+document.addEventListener('keydown', event => { if (event.key === 'Escape') clearDiscovery(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) clearDiscovery(); });
+// Any deliberate interaction with the game clears the transient illustration.
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('.discovery-stage')) clearDiscovery();
+}, true);
+function chime(rarity = 'common') {
   if (!ui.sound) return;
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
     audioCtx.resume();
-    [523.25, 659.25, 783.99].forEach((frequency, i) => {
+    ({common:[523.25,659.25],rare:[392,523.25,659.25],epic:[261.63,392,523.25,659.25,783.99]}[rarity]).forEach((frequency, i) => {
       const osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), t = audioCtx.currentTime + i * .09;
       osc.type = 'sine'; osc.frequency.value = frequency; gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(.035,t+.025); gain.gain.exponentialRampToValueAtTime(.001,t+.7);
       osc.connect(gain); gain.connect(audioCtx.destination); osc.start(t); osc.stop(t+.75);
@@ -169,7 +207,7 @@ function completeExploration() {
   clearInterval(tickTimer);
   const before=state.unlocked;
   const {state:next,result}=game.explore(state,ui.active.region);
-  ui.active=null; ui.latest=result; commit(next); chime();
+  ui.active=null; ui.latest=result; commit(next); revealDiscovery(result); chime(RELICS.find(r=>r.id===result.relic).rarity);
   if(result.isNew)toast(`새로운 기억 · ${RELICS.find(r=>r.id===result.relic).name}`,'discovery');
   if(state.unlocked>before)toast(`새로운 길이 열렸어요 · ${REGIONS[state.unlocked].name}`,'discovery');
   if(ui.auto>0&&!document.hidden)startExploration();
@@ -180,7 +218,7 @@ function changeTab(tab) {
 function download(text,name) {
   const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-function stopTimers() { clearTimeout(expeditionTimer);clearInterval(tickTimer);ui.active=null;ui.auto=0; }
+function stopTimers() { clearDiscovery();clearTimeout(expeditionTimer);clearInterval(tickTimer);ui.active=null;ui.auto=0; }
 function safeAction(fn) { try{fn();}catch(e){toast(e.message||'작업을 마치지 못했습니다.');} }
 document.addEventListener('click',event=>{
   const button=event.target.closest('button,[data-tab],label');if(!button||button.disabled)return;

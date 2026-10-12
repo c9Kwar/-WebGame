@@ -90,6 +90,31 @@ try{
   await check('Service worker serves a playable page while offline',async()=>{
     await until('!!navigator.serviceWorker.controller');await call('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");await click('[data-action="explore"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");await call('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
   });
+  await check('Discovery tiers, duplicate reveal, dismissal and reduced motion',async()=>{
+    for(const [rarity,roll] of [['common',0],['rare',.7],['epic',.999]]){
+      const fixture=await call('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem('still-archive.save.v1',${JSON.stringify(serialize(newGame()))});Math.random=()=>${roll}`});
+      await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");
+      await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fixture.identifier});
+      await click('[data-action="explore"]');await until(`!!document.querySelector('.discovery-${rarity}')`);
+      assert.equal((await save()).runs,1);
+      assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
+      await wait(700);await shot(`discovery-${rarity}-mobile`);
+      if(rarity==='epic'){
+        await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});await shot('discovery-epic-desktop');
+      }
+      await click('.discovery-dismiss');assert.equal(await evaluate("!!document.querySelector('.discovery-stage')"),false);
+    }
+    await click('[data-action="explore"]');await until("!!document.querySelector('.discovery-epic')");
+    assert.equal(await evaluate("document.querySelector('.discovery-note').textContent.includes('중복')"),true);
+    await until("!document.querySelector('.discovery-stage')");
+    await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+    await click('[data-action="explore"]');await until("!!document.querySelector('.discovery-still')");
+    assert.equal(await evaluate("document.querySelectorAll('.discovery-motes i').length"),0);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.discovery-stage')).animationName"),'none');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.discovery-stage')).opacity"),'1');
+    await click('[data-action="settings"]');assert.equal(await evaluate("!!document.querySelector('.discovery-stage')"),false);await close();
+    await call('Emulation.setEmulatedMedia',{features:[]});
+  });
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});await evaluate("document.querySelector('[data-tab=home]').click()");await wait(4600);await shot('desktop-final');
   }
   await check('Standalone HTML is self-contained and restores progress',async()=>{

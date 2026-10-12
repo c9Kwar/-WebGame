@@ -1,4 +1,4 @@
-const CACHE='still-archive-v1';
+const CACHE='still-archive-v2';
 const FILES=['./','./index.html','./style.css','./src/app.js','./src/art.js','./src/data.js','./src/game.js','./assets/mark.svg','./manifest.webmanifest'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('still-archive-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));});
