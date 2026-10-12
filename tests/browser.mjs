@@ -106,6 +106,7 @@ try{
     await click('[data-action="settings"]');await click('[data-action="toggle-motion"]');await close();
     await click('[data-action="explore"]');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.explorer-sprite')).animationName"),'none');
+    for(const selector of ['.room-lamplight','.room-page','.room-dust','.archive-atmosphere i'])assert.equal(await evaluate(`getComputedStyle(document.querySelector('${selector}')).animationName`),'none');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.expedition-traveler')).opacity"),'1');
     await until(`JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===${before+2}`);
     await click('[data-action="settings"]');await click('[data-action="toggle-motion"]');await close();
@@ -168,7 +169,7 @@ try{
     const fixture=await call('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem('still-archive.save.v1',${JSON.stringify(JSON.stringify(legacy))})`});
     await loadPage('Page.reload');await until("!!document.querySelector('[data-tab=notebook]')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fixture.identifier});
     assert.equal((await save()).ink,10000);
-    await click('[data-tab="notebook"]');await shot('notebook-desktop');await click('[data-commission="restore"]');
+    await click('[data-tab="journal"]');await wait(450);await shot('library-journal-desktop');await click('[data-tab="collection"]');await wait(450);await shot('library-collection-desktop');await click('[data-tab="notebook"]');await shot('notebook-desktop');await click('[data-commission="restore"]');
     await click('[data-tab="collection"]');await click('[data-relic="r0"]');for(let i=0;i<3;i++)await click('[data-upgrade="r0"]');await close();
     await click('[data-tab="notebook"]');await click('[data-action="claim-commission"]');assert.equal((await save()).notebook.completed,1);
     await click('[data-desk="chronicles"]');await click('[data-note="note-0-0"]');assert.deepEqual((await save()).notebook.notes,['note-0-0']);assert.ok(await evaluate("document.querySelector('.field-note-text').textContent.includes('지도')"));

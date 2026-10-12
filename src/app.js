@@ -1,6 +1,6 @@
 import { SAVE_KEY, REGIONS, RELICS, RARITIES, RESEARCH, MILESTONES, STORIES, CHRONICLES, EXHIBITIONS, COMMISSIONS } from './data.js';
 import * as game from './game.js';
-import { icon, mark, relicArt, sceneArt } from './art.js';
+import { icon, mark, relicArt, sceneArt, archiveRoom } from './art.js';
 
 const $ = (s, root = document) => root.querySelector(s);
 const fmt = n => new Intl.NumberFormat('ko-KR').format(n);
@@ -18,7 +18,7 @@ try {
   }
 } catch { state = game.newGame(); storageProblem = '이 브라우저에서 자동 저장을 사용할 수 없습니다. 설정에서 세이브 파일을 내려받아 진행을 보관해 주세요.'; }
 const rested = game.rest(state); state = rested.state;
-const ui = { tab: 'home', desk: 'commissions', region: 0, filter: 'all', ownedOnly: false, search: '', active: null, auto: 0, latest: null, selected: null, sound: false, saved: false, importing: null };
+const ui = { tab: 'home', desk: 'commissions', pageTurn: false, region: 0, filter: 'all', ownedOnly: false, search: '', active: null, auto: 0, latest: null, selected: null, sound: false, saved: false, importing: null };
 const tabs = [ ['home','나의 서고','archive'], ['explore','도시 탐사','compass'], ['collection','유물 도감','grid'], ['research','기억 연구','feather'], ['journal','이야기','book'], ['notebook','서고 수첩','feather'] ];
 
 function persist() {
@@ -85,7 +85,7 @@ const money = (type, amount, cls = '') => `<span class="resource ${cls}">${icon(
 const collectionCount = region => RELICS.filter(r => r.region === region && state.owned[r.id]).length;
 function sidebar() {
   const level = game.archiveLevel(state), baseXp = (level - 1) ** 2 * 45, progress = (state.xp - baseXp) / (game.nextLevelXp(state) - baseXp) * 100;
-  return `<aside class="sidebar"><a class="brand" href="#home" data-tab="home" aria-label="잔향 서고 홈">${mark}<span>잔향 서고<small>THE STILL ARCHIVE</small></span></a><div class="sidebar-divider"></div><p class="nav-label">YOUR QUIET JOURNEY</p><nav aria-label="주 메뉴">${tabs.map(([id,label,img]) => `<button class="nav-item ${ui.tab===id?'active':''}" data-tab="${id}" ${ui.tab===id?'aria-current="page"':''}>${icon(img)}<span>${label}</span>${id==='collection'?`<small>${Object.keys(state.owned).length}<i>/30</i></small>`:''}</button>`).join('')}</nav><div class="sidebar-note"><span class="small-star">✧</span><p>잊힌 것들에게<br>돌아갈 곳을.</p><span>EST. IN A TIMELESS CITY</span></div><div class="profile"><div class="profile-top"><span class="avatar">${icon('feather')}</span><div><strong>${esc(state.name)}</strong><small>서고지기 · Lv. ${level}</small></div><button class="icon-button" data-action="settings" aria-label="설정">${icon('settings')}</button></div><div class="progress thin" role="progressbar" aria-label="서고지기 성장" aria-valuenow="${Math.floor(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div><div class="profile-xp"><span>다음 기록까지</span><span>${fmt(game.nextLevelXp(state)-state.xp)} XP</span></div></div></aside>`;
+  return `<aside class="sidebar"><a class="brand" href="#home" data-tab="home" aria-label="잔향 서고 홈">${mark}<span>잔향 서고<small>THE STILL ARCHIVE</small></span></a><div class="sidebar-divider"></div><p class="nav-label">YOUR QUIET JOURNEY</p><nav aria-label="주 메뉴">${tabs.map(([id,label,img]) => `<button class="nav-item ${ui.tab===id?'active':''}" data-tab="${id}" ${ui.tab===id?'aria-current="page"':''}>${icon(img)}<span>${label}</span>${id==='collection'?`<small>${Object.keys(state.owned).length}<i>/30</i></small>`:''}</button>`).join('')}</nav><div class="sidebar-note"><div class="sidebar-books" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="small-star">✧</span><p>잊힌 것들에게<br>돌아갈 곳을.</p><span>EST. IN A TIMELESS CITY</span></div><div class="profile"><div class="profile-top"><span class="avatar">${icon('feather')}</span><div><strong>${esc(state.name)}</strong><small>서고지기 · Lv. ${level}</small></div><button class="icon-button" data-action="settings" aria-label="설정">${icon('settings')}</button></div><div class="progress thin" role="progressbar" aria-label="서고지기 성장" aria-valuenow="${Math.floor(progress)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${progress}%"></i></div><div class="profile-xp"><span>다음 기록까지</span><span>${fmt(game.nextLevelXp(state)-state.xp)} XP</span></div></div></aside>`;
 }
 function header() {
   return `<header class="topbar"><div class="breadcrumb"><span>서고</span>${icon('chevron')}<strong>${tabs.find(t=>t[0]===ui.tab)[1]}</strong></div><div class="balances"><span class="balance" title="복원과 연구에 사용하는 잉크">${icon('ink')}<span><small>잉크</small><b data-balance="ink">${fmt(state.ink)}</b></span></span><span class="balance dust" title="유물을 복원하는 기억의 잔향">${icon('star')}<span><small>잔향</small><b data-balance="dust">${fmt(state.dust)}</b></span></span><button class="power-chip" data-action="power" title="공명력 구성 보기">${icon('focus')}<span>${fmt(game.power(state))}</span></button><button class="icon-button help-button" data-action="help" aria-label="플레이 안내">${icon('help')}</button><button class="icon-button mobile-settings" data-action="settings" aria-label="설정">${icon('settings')}</button></div></header>`;
@@ -232,7 +232,7 @@ function exhibitionPage() {
 function render() {
   document.documentElement.classList.toggle('reduce-motion',state.reducedMotion);
   const pages={home,explore:exploration,collection,research:researchPage,journal,notebook:notebookPage};
-  root.innerHTML=`${sidebar()}<div class="workspace">${header()}${storageProblem?`<div class="storage-warning" role="alert">${esc(storageProblem)}<button class="text-button" data-action="settings">저장 설정</button></div>`:''}<main id="main" tabindex="-1">${pages[ui.tab]()}</main><footer><span>${mark}THE STILL ARCHIVE</span><span>오늘의 작은 발견이, 내일의 당신에게.</span><button data-action="settings" class="save-status">${icon(ui.saved?'check':'download')}${ui.saved?'이 기기에 저장됨':'저장 설정'}</button></footer></div>`;
+  root.innerHTML=`${sidebar()}<div class="workspace">${header()}${storageProblem?`<div class="storage-warning" role="alert">${esc(storageProblem)}<button class="text-button" data-action="settings">저장 설정</button></div>`:''}<main id="main" tabindex="-1" data-page="${ui.tab}" class="${ui.pageTurn?'page-turn':''}">${archiveRoom()}${pages[ui.tab]()}</main><footer><span>${mark}THE STILL ARCHIVE</span><span>오늘의 작은 발견이, 내일의 당신에게.</span><button data-action="settings" class="save-status">${icon(ui.saved?'check':'download')}${ui.saved?'이 기기에 저장됨':'저장 설정'}</button></footer></div>`;
 }
 function openDialog(content, cls='') {
   dialog.className=cls; dialog.innerHTML=`<button class="dialog-close icon-button" data-action="close-dialog" aria-label="닫기">${icon('close')}</button>${content}`;
@@ -287,7 +287,7 @@ function completeExploration() {
   if(ui.auto>0&&!document.hidden)startExploration();
 }
 function changeTab(tab) {
-  ui.tab=tab; render(); window.scrollTo({top:0,behavior:'instant'}); $('#main').focus({preventScroll:true});
+  ui.tab=tab; ui.pageTurn=true; render(); ui.pageTurn=false; window.scrollTo({top:0,behavior:'instant'}); $('#main').focus({preventScroll:true});
 }
 function download(text,name) {
   const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -360,6 +360,7 @@ document.addEventListener('submit',event=>{
 dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
 dialog.addEventListener('close',()=>{if(!dialog.open)ui.importing=null;});
 document.addEventListener('visibilitychange',()=>{
+  document.documentElement.classList.toggle('archive-sleep',document.hidden);
   if(document.hidden){state.lastSeen=Date.now();persist();}
   else {const paused=game.rest(state);state=paused.state;persist();render();if(paused.reward)toast(`기다리는 동안 잉크 ${paused.reward.ink}개, 잔향 ${paused.reward.dust}개를 모았어요.`);if(ui.auto>0&&!ui.active)startExploration();}
 });
