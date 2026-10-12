@@ -95,11 +95,11 @@ function heading(kicker, title, subtitle, extra = '') {
 }
 function recoveryText() {
   const supply=game.readiness(state), seconds=Math.ceil(supply.nextIn/1000);
-  return supply.amount===game.MAX_READINESS?'준비를 모두 마쳤어요':`다음 회복 ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} · 2분마다 +1`;
+  return supply.amount===game.MAX_READINESS?'':`회복 ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
 }
 function readinessPanel() {
   const supply=game.readiness(state),cost=game.restockCost(state);
-  return `<div class="readiness-panel ${supply.amount===0?'exhausted':''}"><div><strong>탐사 준비도 <span class="readiness-count">${supply.amount} / ${game.MAX_READINESS}</span></strong><span class="readiness-next">${recoveryText()}</span></div><p>탐사 1회당 준비도 1 · 귀환 보상과 함께 차감</p><button class="readiness-restock button outlined" data-action="restock" ${!cost||state.ink<cost.ink?'disabled':''}>${cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)} 소모`:'보급이 가득 찼어요'}</button><small>보급 비용은 탐사 수익보다 높아요. 복원할 잉크를 남겨 두세요.</small><button class="readiness-alternative text-button" data-tab="notebook" ${supply.amount?'hidden':''}>쉬는 동안 수첩·전시 살펴보기 ${icon('arrow')}</button></div>`;
+  return `<div class="readiness-panel ${supply.amount===0?'exhausted':''}"><div class="readiness-status"><strong>${icon('leaf')} 준비도 <span class="readiness-count">${supply.amount} / ${game.MAX_READINESS}</span></strong><span class="readiness-next">${recoveryText()}</span></div><button class="readiness-restock" data-action="restock" ${!cost?'hidden':''} ${!cost||state.ink<cost.ink?'disabled':''}>${cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)}`:''}</button></div>`;
 }
 function refreshReadiness() {
   if(document.hidden || ui.active)return;
@@ -108,17 +108,16 @@ function refreshReadiness() {
   $('.readiness-count',panel).textContent=`${supply.amount} / ${game.MAX_READINESS}`;
   $('.readiness-next',panel).textContent=recoveryText();
   panel.classList.toggle('exhausted',supply.amount===0);
-  $('.readiness-alternative',panel).hidden=supply.amount>0;
   const cost=game.restockCost(state),restock=$('[data-action="restock"]',panel);
-  restock.disabled=!cost||state.ink<cost.ink;restock.textContent=cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)} 소모`:'보급이 가득 찼어요';
+  restock.hidden=!cost;restock.disabled=!cost||state.ink<cost.ink;restock.textContent=cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)}`:'';
   const explore=$('[data-action="explore"]'),auto=$('[data-action="auto"]');
-  if(explore){explore.disabled=supply.amount===0;$('span',explore).textContent=supply.amount?'탐사 떠나기':'준비도를 회복하는 중';}
+  if(explore){explore.disabled=supply.amount===0;$('span',explore).textContent=supply.amount?'탐사 떠나기':'준비 중';}
   if(auto){auto.disabled=supply.amount===0;auto.textContent=supply.amount?`${Math.min(5,supply.amount)}회 이어서 탐사`:'잠시 쉬어 가요';}
 }
 function expeditionButton() {
   if (ui.active) return `<button class="button primary explore-button" disabled>${icon('compass','turning')}<span>기억을 찾는 중…</span></button><button class="auto-button" data-action="stop-auto">${ui.auto>0?`연속 탐사 중 · ${ui.auto}회 남음 · 멈추기`:'이번 탐사 후 돌아옵니다'}</button>`;
   const amount=game.readiness(state).amount;
-  return `<button class="button primary explore-button" data-action="explore" ${amount?'':'disabled'}>${icon('compass')}<span>${amount?'탐사 떠나기':'준비도를 회복하는 중'}</span>${icon('arrow')}</button><button class="auto-button" data-action="auto" ${amount?'':'disabled'}>${amount?`${Math.min(5,amount)}회 이어서 탐사`:'잠시 쉬어 가요'} ${icon('chevron')}</button>`;
+  return `<button class="button primary explore-button" data-action="explore" ${amount?'':'disabled'}>${icon('compass')}<span>${amount?'탐사 떠나기':'준비 중'}</span>${icon('arrow')}</button><button class="auto-button" data-action="auto" ${amount?'':'disabled'}>${amount?`${Math.min(5,amount)}회 이어서 탐사`:'잠시 쉬어 가요'} ${icon('chevron')}</button>`;
 }
 function expeditionJourney() {
   if (!ui.active) return '';
