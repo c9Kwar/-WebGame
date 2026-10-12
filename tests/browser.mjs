@@ -163,6 +163,22 @@ try{
     await until("!document.querySelector('[data-action=explore]').disabled",5000);assert.ok(await evaluate("document.querySelector('.readiness-count').textContent.includes('1 / 10')"));
     await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});
   });
+  await check('Relic tracking selection, cancellation, persistence and guaranteed discovery',async()=>{
+    const targeted=newGame();targeted.runs=5;targeted.visits[0]=5;targeted.pity[0]=5;
+    const fixture=await call('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem('still-archive.save.v1',${JSON.stringify(serialize(targeted))})`});
+    await loadPage('Page.reload');await until("!!document.querySelector('[data-tab=collection]')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fixture.identifier});
+    await click('[data-tab="collection"]');await click('[data-relic="r4"]');await click('[data-track="r4"]');assert.equal((await save()).trackedRelic,'r4');
+    await click('[data-track="cancel"]');assert.equal((await save()).trackedRelic,null);await click('[data-track="r4"]');await close();
+    assert.equal(await evaluate("document.querySelectorAll('.tracked-tag').length"),1);
+    await loadPage('Page.reload');await until("!!document.querySelector('.tracking-hint')");assert.equal((await save()).trackedRelic,'r4');
+    assert.ok(await evaluate("document.querySelector('.tracking-hint').textContent.includes('최대 1회')"));
+    await call('Emulation.setDeviceMetricsOverride',{width:320,height:780,deviceScaleFactor:1,mobile:true});
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+    await evaluate("document.querySelector('.tracking-hint').scrollIntoView({block:'center'})");await shot('tracking-mobile');
+    await click('[data-action="explore"]');await until("!!JSON.parse(localStorage.getItem('still-archive.save.v1')).owned.r4");
+    assert.equal((await save()).trackedRelic,null);assert.equal((await save()).readiness.amount,9);assert.equal(await evaluate("!!document.querySelector('.tracking-hint')"),false);
+    await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});
+  });
   await check('Notebook migration, restoration commission, chronicles and exhibitions',async()=>{
     const legacy=newGame();delete legacy.notebook;legacy.ink=10000;legacy.dust=1000;legacy.visits[0]=5;legacy.runs=5;legacy.unlocked=5;
     for(const id of ['r0','r1','r20','r25'])legacy.owned[id]={level:2,copies:0,resonance:0};

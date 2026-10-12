@@ -16,6 +16,28 @@ test('sixth expedition since last discovery guarantees an unowned relic',()=>{
   for(let i=0;i<5;i++){const result=g.explore(state,0,()=>0);assert.equal(result.result.isNew,false);state=result.state;}
   const result=g.explore(state,0,()=>0);assert.equal(result.result.isNew,true);assert.equal(result.result.guaranteed,true);assert.equal(result.state.pity[0],0);
 });
+test('tracking guarantees its target within six local expeditions even when other new relics appear',()=>{
+  let state=g.newGame();state.runs=1;
+  const original=structuredClone(state);state=g.trackRelic(state,'r4');assert.deepEqual(original.trackedRelic,null);assert.equal(state.ink,original.ink);
+  const draws=[.4,.7,.9,0,0], expected=['r1','r2','r3','r0','r0'];
+  for(let i=0;i<5;i++){const step=g.explore(state,0,()=>draws[i]);assert.equal(step.result.relic,expected[i]);assert.equal(step.state.pity[0],i+1);assert.equal(step.state.trackedRelic,'r4');state=step.state;}
+  const found=g.explore(state,0,()=>0);assert.equal(found.result.relic,'r4');assert.equal(found.result.guaranteed,true);assert.equal(found.state.trackedRelic,null);assert.equal(found.state.readiness.amount,4);
+  const first=g.explore(g.trackRelic(g.newGame(),'r4'),0,()=>0);assert.equal(first.result.relic,'r4');assert.equal(first.result.guaranteed,true);
+});
+test('tracking preserves ordinary odds and other regions, clears on natural discovery and can be cancelled',()=>{
+  let state=g.newGame();state.runs=1;state.unlocked=1;state=g.trackRelic(state,'r4');
+  const other=g.explore(state,1,()=>.999);assert.equal(other.result.relic,'r9');assert.equal(other.state.trackedRelic,'r4');
+  const ordinary=g.explore(state,0,()=>.4);assert.equal(ordinary.result.relic,'r1');assert.equal(ordinary.result.guaranteed,false);assert.equal(ordinary.state.trackedRelic,'r4');
+  const found=g.explore(state,0,()=>.999);assert.equal(found.result.relic,'r4');assert.equal(found.result.guaranteed,false);assert.equal(found.state.trackedRelic,null);
+  state.pity[0]=3;assert.equal(g.trackRelic(state,'r3').pity[0],3);const cancelled=g.trackRelic(state,null);assert.equal(cancelled.trackedRelic,null);assert.equal(cancelled.pity[0],3);assert.equal(state.trackedRelic,'r4');
+  for(const id of ['r0','r10','unknown',undefined])assert.throws(()=>g.trackRelic(state,id));
+});
+test('tracking migrates legacy saves, persists targets, normalizes owned targets and rejects invalid imports',()=>{
+  const old=g.newGame();delete old.trackedRelic;assert.equal(g.parseSave(JSON.stringify(old)).trackedRelic,null);
+  const tracked=g.trackRelic(g.newGame(),'r4');assert.equal(g.parseSave(g.serialize(tracked)).trackedRelic,'r4');
+  tracked.trackedRelic='r0';assert.equal(g.validateSave(tracked).trackedRelic,null);
+  for(const id of ['r5','unknown',false,1,{}]){tracked.trackedRelic=id;assert.throws(()=>g.validateSave(tracked));}
+});
 test('completed region continues giving duplicates and never selects empty pool',()=>{
   let state=g.newGame();for(const r of RELICS.filter(r=>r.region===0))state.owned[r.id]={level:1,copies:0,resonance:0};
   for(let i=0;i<30;i++){const r=g.explore(state,0,()=>.9999,state.readiness.updatedAt+g.READINESS_INTERVAL_MS);assert.equal(r.result.isNew,false);assert.equal(r.result.relic,'r4');state=r.state;}

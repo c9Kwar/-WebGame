@@ -13,7 +13,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 export function newGame(now = Date.now()) {
   return { version: VERSION, name: '기록가', ink: 120, dust: 12, xp: 0, runs: 0, upgrades: 0,
     readiness: { amount: MAX_READINESS, updatedAt: now },
-    owned: { r0: { level: 1, copies: 0, resonance: 0 } }, equipped: ['r0'],
+    owned: { r0: { level: 1, copies: 0, resonance: 0 } }, equipped: ['r0'], trackedRelic: null,
     research: { focus: 0, ink: 0, dust: 0, rest: 0 }, visits: [0, 0, 0, 0, 0, 0], pity: [0, 0, 0, 0, 0, 0],
     notebook: { notes: [], exhibits: {}, completed: 0, active: null }, unlocked: 0, claimed: [], history: [], createdAt: now, lastSeen: now, tutorialDismissed: false, reducedMotion: false };
 }
@@ -111,6 +111,12 @@ function pick(items, rng) {
   let draw = Math.max(0, Math.min(.999999999, Number(rng()) || 0)) * total;
   return items.find(r => (draw -= weight(r)) < 0) || items.at(-1);
 }
+export function trackRelic(state, id) {
+  const relic = RELICS.find(r => r.id === id);
+  assert(id === null || (relic && relic.region <= state.unlocked && !state.owned[id]), '열린 탐사지의 미발견 유물만 추적할 수 있습니다.');
+  const next = clone(state); next.trackedRelic = id;
+  return finish(next);
+}
 export function explore(state, regionId, rng = Math.random, now = Date.now()) {
   assert(Number.isInteger(regionId) && regionId >= 0 && regionId <= state.unlocked && REGIONS[regionId], '아직 열리지 않은 탐사지입니다.');
   const supplies = readiness(state,now);
@@ -118,16 +124,19 @@ export function explore(state, regionId, rng = Math.random, now = Date.now()) {
   const next = clone(state), pool = RELICS.filter(r => r.region === regionId), missing = pool.filter(r => !next.owned[r.id]);
   next.readiness = { amount: supplies.amount-1, updatedAt: supplies.updatedAt };
   const guaranteed = missing.length > 0 && (next.pity[regionId] >= 5 || next.runs === 0);
-  const relic = pick(guaranteed ? missing : pool, rng), isNew = !next.owned[relic.id];
+  const tracked = missing.find(r => r.id === next.trackedRelic);
+  const relic = (guaranteed && tracked) || pick(guaranteed ? missing : pool, rng), isNew = !next.owned[relic.id];
   const rewards = expectedRewards(state, regionId);
   const duplicateDust = isNew ? 0 : { common: 2, rare: 4, epic: 8 }[relic.rarity];
   next.ink += rewards.ink; next.dust += rewards.dust + duplicateDust; next.xp += rewards.xp;
   next.runs++; next.visits[regionId]++;
-  next.pity[regionId] = isNew || !missing.length ? 0 : Math.min(5, next.pity[regionId] + 1);
+  const discoveryGoalMet = tracked ? relic.id === tracked.id : isNew;
+  next.pity[regionId] = discoveryGoalMet || !missing.length ? 0 : Math.min(5, next.pity[regionId] + 1);
   if (isNew) {
     next.owned[relic.id] = { level: 1, copies: 0, resonance: 0 };
     if (next.equipped.length < 3) next.equipped.push(relic.id);
   } else next.owned[relic.id].copies = Math.min(1e6, next.owned[relic.id].copies + 1);
+  if (next.trackedRelic === relic.id) next.trackedRelic = null;
   const result = { relic: relic.id, isNew, guaranteed, ink: rewards.ink, dust: rewards.dust + duplicateDust, xp: rewards.xp, region: regionId, at: now };
   next.history = [result, ...next.history].slice(0, 30);
   return { state: finish(next, now), result };
@@ -229,6 +238,11 @@ export function validateSave(raw) {
     state[key] = [...raw[key]];
   }
   assert(bounded(raw.unlocked, REGIONS.length - 1), '탐사지 데이터가 올바르지 않습니다.'); state.unlocked = raw.unlocked;
+  if (raw.trackedRelic !== undefined && raw.trackedRelic !== null) {
+    const relic = RELICS.find(r => r.id === raw.trackedRelic);
+    assert(relic && relic.region <= state.unlocked, '추적 중인 유물 기록이 올바르지 않습니다.');
+    state.trackedRelic = state.owned[relic.id] ? null : relic.id;
+  }
   assert(Array.isArray(raw.claimed) && new Set(raw.claimed).size === raw.claimed.length && raw.claimed.every(id => MILESTONES.some(m => m.id === id)), '여정 보상 기록이 올바르지 않습니다.');
   state.claimed = [...raw.claimed];
   state.history = (Array.isArray(raw.history) ? raw.history : []).filter(h => h && RELICS.some(r => r.id === h.relic) && typeof h.isNew === 'boolean' && bounded(h.region, 5) && bounded(h.at, 1e14) && ['ink','dust','xp'].every(k => bounded(h[k]))).slice(0, 30).map(h => ({ relic:h.relic, isNew:h.isNew, guaranteed:!!h.guaranteed, region:h.region, at:h.at, ink:h.ink, dust:h.dust, xp:h.xp }));
