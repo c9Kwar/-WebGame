@@ -17,8 +17,11 @@ export async function buildStandalone(root, output) {
     .replace(/^import \{([^}]+)\} from '\.\/art\.js';$/gm,'const {$1}=Art;')
     .replace(/^if\('serviceWorker' in navigator\).*$/gm,'');
   if(/^\s*(import|export)\s/m.test(ui))throw new Error('Unsupported import/export in standalone UI');
+  const explorer = `data:image/png;base64,${(await readFile(path.join(root,'assets/explorer-sheet.png'))).toString('base64')}`;
+  const embeddedCss = css.replaceAll('./assets/explorer-sheet.png',explorer);
   const bundle=[packageModule(data,'Data'),packageModule(domain,'game'),packageModule(art,'Art'),`(()=>{\n${ui}\n})();`].join('\n');
-  const html=index.replace('<link rel="stylesheet" href="./style.css">',`<style>${css}</style>`)
+  const html=index.replace('<link rel="stylesheet" href="./style.css">',`<style>${embeddedCss}</style>`)
+    .replace('<link rel="preload" as="image" href="./assets/explorer-sheet.png">','')
     .replace('<link rel="manifest" href="./manifest.webmanifest">','')
     .replace('href="./assets/mark.svg"',`href="data:image/svg+xml,${encodeURIComponent(mark)}"`)
     .replace('<script type="module" src="./src/app.js"></script>',`<script type="module">\n${bundle.replace(/<\/script/gi,'<\\/script')}\n</script>`);

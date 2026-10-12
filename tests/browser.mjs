@@ -51,7 +51,16 @@ try{
   await loadPage('Page.navigate',{url});await until("!!document.querySelector('[data-action=explore]')");
   await check('Initial desktop view and nested deployment path',async()=>{assert.equal(await evaluate('document.title'),'잔향 서고 — The Still Archive');assert.equal((await save()).ink,120);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);});
   await shot('desktop-initial');
-  await check('Real pointer expedition, guaranteed discovery and rewards',async()=>{await click('[data-action="explore"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");const s=await save();assert.equal(Object.keys(s.owned).length,2);assert.equal(s.ink,152);assert.ok(await evaluate("!!document.querySelector('.result-banner')"));});
+  await check('Real pointer expedition, illustrated phases, discovery and rewards',async()=>{await click('[data-action="explore"]');
+    await until("!!document.querySelector('.explorer-sprite')");
+    await until("getComputedStyle(document.querySelector('.expedition-traveler')).opacity==='1'");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.explorer-sprite')).backgroundPosition"),'0px 0px');
+    await shot('explorer-departure-desktop');
+    await until("document.querySelector('.explorer-sprite') && getComputedStyle(document.querySelector('.explorer-sprite')).backgroundPosition==='50% 0px'");
+    await shot('explorer-search-desktop');
+    await until("document.querySelector('.explorer-sprite') && getComputedStyle(document.querySelector('.explorer-sprite')).backgroundPosition==='100% 0px'");
+    await shot('explorer-found-desktop');
+    await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");const s=await save();assert.equal(Object.keys(s.owned).length,2);assert.equal(s.ink,152);assert.ok(await evaluate("!!document.querySelector('.result-banner')"));});
   await check('Relic dialog and restoration use actual stored resources',async()=>{await click('[data-relic="r0"]');await click('[data-upgrade="r0"]');assert.equal((await save()).owned.r0.level,2);assert.equal((await save()).ink,124);await close();});
   await check('Milestone reward cannot be claimed twice through UI',async()=>{await click('[data-claim="first"]');assert.equal((await save()).ink,174);assert.deepEqual((await save()).claimed,['first']);});
   await check('Collection search and owned-only filtering',async()=>{await click('[data-tab="collection"]');assert.equal(await evaluate("document.querySelectorAll('.collection-grid .relic-card').length"),30);await evaluate("(()=>{const q=document.querySelector('#relic-search');q.value='회중시계';q.dispatchEvent(new Event('input',{bubbles:true}))})()");assert.equal(await evaluate("document.querySelectorAll('.collection-grid .relic-card').length"),1);await evaluate("(()=>{const q=document.querySelector('#relic-search');q.value='';q.dispatchEvent(new Event('input',{bubbles:true}))})()");await click('#owned-only');assert.equal(await evaluate("document.querySelectorAll('.collection-grid .relic-card').length"),2);});
@@ -83,12 +92,33 @@ try{
     await evaluate("document.querySelector('[data-tab=home]').click()");await wait(4600);await shot('mobile-home');
     await click('[data-relic="r0"]');assert.equal(await evaluate("document.querySelector('dialog').getBoundingClientRect().width<=innerWidth"),true);await shot('mobile-relic');await close();
   });
+  await check('Readable text, mobile illustrated exploration, cancellation and reduced motion',async()=>{
+    assert.ok(await evaluate("parseFloat(getComputedStyle(document.querySelector('.page-heading p')).fontSize)>=16"));
+    assert.ok(await evaluate("parseFloat(getComputedStyle(document.querySelector('.hero-description')).fontSize)>=16"));
+    assert.ok(await evaluate("parseFloat(getComputedStyle(document.querySelector('[data-action=explore]')).fontSize)>=15"));
+    const before=(await save()).runs;
+    await click('[data-action="auto"]');await wait(400);await shot('explorer-mobile');
+    assert.ok(await evaluate("(()=>{const r=document.querySelector('.explorer-sprite').getBoundingClientRect();return r.width>=180&&r.left>=0&&r.right<=innerWidth})()"));
+    await click('.journey-stop');
+    assert.ok(await evaluate("parseFloat(document.querySelector('.expedition-journey').style.getPropertyValue('--journey-delay'))<0"));
+    await until(`JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===${before+1}`);await wait(500);
+    assert.equal(await evaluate("!!document.querySelector('.expedition-journey')"),false);
+    await click('[data-action="settings"]');await click('[data-action="toggle-motion"]');await close();
+    await click('[data-action="explore"]');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.explorer-sprite')).animationName"),'none');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.expedition-traveler')).opacity"),'1');
+    await until(`JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===${before+2}`);
+    await click('[data-action="settings"]');await click('[data-action="toggle-motion"]');await close();
+    await call('Emulation.setDeviceMetricsOverride',{width:320,height:740,deviceScaleFactor:1,mobile:true});
+    for(const tab of ['home','explore','collection','research','journal','notebook']){await evaluate(`document.querySelector('[data-tab=${tab}]').click()`);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`320px overflow: ${tab}`);}
+    await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  });
   await check('Browser save corruption is preserved, not overwritten',async()=>{
     const injection=await call('Page.addScriptToEvaluateOnNewDocument',{source:"localStorage.setItem('still-archive.save.v1','{broken')"});await loadPage('Page.reload');await until("!!document.querySelector('.storage-warning')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:injection.identifier});assert.equal(await evaluate("localStorage.getItem('still-archive.save.v1.recovery')"),'{broken');assert.equal(await evaluate("localStorage.getItem('still-archive.save.v1')"),'{broken');
     await click('[data-action="settings"]');await click('[data-action="accept-new"]');await close();assert.equal((await save()).version,1);
   });
   await check('Service worker serves a playable page while offline',async()=>{
-    await until('!!navigator.serviceWorker.controller');await call('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");await click('[data-action="explore"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");await call('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await until('!!navigator.serviceWorker.controller');await call('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");await click('[data-action="explore"]');assert.ok(await evaluate("getComputedStyle(document.querySelector('.explorer-sprite')).backgroundImage.includes('explorer-sheet.png')"));assert.equal(await evaluate("fetch('./assets/explorer-sheet.png').then(r=>r.ok)"),true);await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");await call('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
   });
   await check('Discovery tiers, duplicate reveal, dismissal and reduced motion',async()=>{
     for(const [rarity,roll] of [['common',0],['rare',.7],['epic',.999]]){
@@ -142,7 +172,7 @@ try{
     await until("!!document.querySelector('[data-action=explore]')");
     await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fresh.identifier});
     assert.equal((await save()).runs,0);
-    await click('[data-action="explore"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");
+    await click('[data-action="explore"]');assert.ok(await evaluate("getComputedStyle(document.querySelector('.explorer-sprite')).backgroundImage.includes('data:image/png;base64,')"));await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");
     await click('[data-relic="r0"]');await click('[data-upgrade="r0"]');await close();
     await click('[data-tab="notebook"]');await click('[data-commission="survey"]');
     await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");
