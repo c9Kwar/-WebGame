@@ -1,4 +1,4 @@
-import { VERSION, REGIONS, RELICS, RARITIES, RESEARCH, MILESTONES } from './data.js';
+import { VERSION, REGIONS, RELICS, RARITIES, RESEARCH, MILESTONES, CHRONICLES, EXHIBITIONS, EXHIBITION_LEVELS, COMMISSIONS } from './data.js';
 
 export const MAX_LEVEL = 20;
 export const MAX_RESONANCE = 3;
@@ -12,7 +12,7 @@ export function newGame(now = Date.now()) {
   return { version: VERSION, name: '기록가', ink: 120, dust: 12, xp: 0, runs: 0, upgrades: 0,
     owned: { r0: { level: 1, copies: 0, resonance: 0 } }, equipped: ['r0'],
     research: { focus: 0, ink: 0, dust: 0, rest: 0 }, visits: [0, 0, 0, 0, 0, 0], pity: [0, 0, 0, 0, 0, 0],
-    unlocked: 0, claimed: [], history: [], createdAt: now, lastSeen: now, tutorialDismissed: false, reducedMotion: false };
+    notebook: { notes: [], exhibits: {}, completed: 0, active: null }, unlocked: 0, claimed: [], history: [], createdAt: now, lastSeen: now, tutorialDismissed: false, reducedMotion: false };
 }
 export function relicPower(state, id) {
   const item = state.owned[id];
@@ -122,6 +122,65 @@ export function rest(state, now = Date.now()) {
   if (reward) { next.ink += reward.ink; next.dust += reward.dust; }
   return { state: finish(next, now), reward };
 }
+export function chronicleProgress(state, id) {
+  const note = CHRONICLES.find(n => n.id === id);
+  assert(note, '알 수 없는 답사록입니다.');
+  const items = RELICS.filter(r => r.region === note.region).map(r => state.owned[r.id]).filter(Boolean);
+  const values = [state.visits[note.region], items.length, items.reduce((n,item) => n + item.level, 0)];
+  const goals = [note.visits, note.owned, note.levels];
+  const previous = note.tier === 0 || state.notebook.notes.includes(`note-${note.region}-${note.tier-1}`);
+  return { values, goals, ready: previous && values.every((n,i) => n >= goals[i]) };
+}
+export function claimChronicle(state, id) {
+  assert(!state.notebook.notes.includes(id) && chronicleProgress(state,id).ready, '앞선 기록과 답사 조건을 먼저 완성해 주세요.');
+  const note = CHRONICLES.find(n => n.id === id), next = clone(state);
+  next.notebook.notes.push(id);next.ink += note.ink;next.dust += note.dust;
+  return finish(next);
+}
+export function exhibitionProgress(state, id) {
+  const exhibit = EXHIBITIONS.find(e => e.id === id);
+  assert(exhibit, '알 수 없는 전시입니다.');
+  const tier = state.notebook.exhibits[id] || 0, level = EXHIBITION_LEVELS[tier];
+  return { tier, level, ready: tier < 3 && exhibit.relics.every(id => (state.owned[id]?.level || 0) >= level), ink: [300,900,2400][tier] || 0, dust: [20,60,150][tier] || 0 };
+}
+export function claimExhibition(state, id) {
+  const progress = exhibitionProgress(state,id);
+  assert(progress.ready, '전시할 유물을 모으고 필요한 레벨까지 복원해 주세요.');
+  const next = clone(state);next.notebook.exhibits[id] = progress.tier + 1;
+  next.ink += progress.ink;next.dust += progress.dust;
+  return finish(next);
+}
+export function commissionOffer(state, id) {
+  const spec = COMMISSIONS.find(c => c.id === id);
+  assert(spec, '알 수 없는 의뢰입니다.');
+  const region = state.notebook.completed % (state.unlocked + 1);
+  // Reward is fixed on acceptance; an easy old district never pays late-game rates.
+  const rewardRegion = spec.metric === 'visits' ? region : state.unlocked;
+  return { id, region, baseline: spec.metric === 'visits' ? state.visits[region] : state[spec.metric],
+    ink: REGIONS[rewardRegion].ink * spec.multiplier, dust: REGIONS[rewardRegion].dust * spec.multiplier };
+}
+export function startCommission(state, id) {
+  assert(!state.notebook.active, '받아 둔 의뢰를 마치거나 내려놓아 주세요.');
+  assert(state.notebook.completed < 1e6, '모든 의뢰 기록을 채웠습니다.');
+  if(id === 'restore') assert(Object.values(state.owned).some(item => item.level < MAX_LEVEL), '복원할 수 있는 유물이 없습니다. 다른 의뢰를 골라 주세요.');
+  const next = clone(state);next.notebook.active = commissionOffer(state,id);return finish(next);
+}
+export function commissionProgress(state) {
+  const active = state.notebook.active;
+  if(!active) return null;
+  const spec = COMMISSIONS.find(c => c.id === active.id);
+  const value = (spec.metric === 'visits' ? state.visits[active.region] : state[spec.metric]) - active.baseline;
+  return { value: Math.max(0,Math.min(spec.goal,value)), goal: spec.goal, ready: value >= spec.goal };
+}
+export function claimCommission(state) {
+  assert(commissionProgress(state)?.ready, '의뢰를 마치면 보상을 받을 수 있어요.');
+  const next = clone(state), active = next.notebook.active;
+  next.ink += active.ink;next.dust += active.dust;next.notebook.completed++;next.notebook.active = null;
+  return finish(next);
+}
+export function cancelCommission(state) {
+  const next = clone(state);next.notebook.active = null;return finish(next);
+}
 export function validateSave(raw) {
   assert(raw && typeof raw === 'object' && raw.version === VERSION, '지원하지 않는 세이브 파일입니다.');
   const state = newGame();
@@ -148,6 +207,20 @@ export function validateSave(raw) {
   assert(Array.isArray(raw.claimed) && new Set(raw.claimed).size === raw.claimed.length && raw.claimed.every(id => MILESTONES.some(m => m.id === id)), '여정 보상 기록이 올바르지 않습니다.');
   state.claimed = [...raw.claimed];
   state.history = (Array.isArray(raw.history) ? raw.history : []).filter(h => h && RELICS.some(r => r.id === h.relic) && typeof h.isNew === 'boolean' && bounded(h.region, 5) && bounded(h.at, 1e14) && ['ink','dust','xp'].every(k => bounded(h[k]))).slice(0, 30).map(h => ({ relic:h.relic, isNew:h.isNew, guaranteed:!!h.guaranteed, region:h.region, at:h.at, ink:h.ink, dust:h.dust, xp:h.xp }));
+  // Additive migration: version-1 saves from before the notebook keep all progress.
+  if (raw.notebook !== undefined) {
+    const book = raw.notebook;
+    assert(book && typeof book === 'object' && Array.isArray(book.notes) && new Set(book.notes).size === book.notes.length && book.notes.every(id => CHRONICLES.some(n => n.id === id)), '답사록 데이터가 올바르지 않습니다.');
+    assert(book.exhibits && typeof book.exhibits === 'object' && !Array.isArray(book.exhibits) && Object.entries(book.exhibits).every(([id,tier]) => EXHIBITIONS.some(e => e.id === id) && bounded(tier,3)), '전시 기록이 올바르지 않습니다.');
+    assert(bounded(book.completed,1e6), '의뢰 기록이 올바르지 않습니다.');
+    state.notebook = {notes:[...book.notes],exhibits:{...book.exhibits},completed:book.completed,active:null};
+    if (book.active !== null) {
+      const a = book.active, spec = COMMISSIONS.find(c => c.id === a?.id);
+      assert(spec && bounded(a.region,state.unlocked) && bounded(a.baseline) && bounded(a.ink,930) && bounded(a.dust,48), '진행 중인 의뢰가 올바르지 않습니다.');
+      assert(a.baseline <= (spec.metric === 'visits' ? state.visits[a.region] : state[spec.metric]), '의뢰의 시작 기록이 올바르지 않습니다.');
+      state.notebook.active = {id:a.id,region:a.region,baseline:a.baseline,ink:a.ink,dust:a.dust};
+    }
+  }
   state.tutorialDismissed = !!raw.tutorialDismissed; state.reducedMotion = !!raw.reducedMotion;
   return state;
 }

@@ -94,3 +94,43 @@ test('malformed history is filtered without executing markup or preserving forei
   const s=g.newGame();s.history=[{relic:'bad'},{relic:'r0',isNew:true,region:0,at:1,ink:3,dust:2,xp:1,html:'<script>bad</script>'}];
   const result=g.validateSave(s);assert.equal(result.history.length,1);assert.equal(result.history[0].html,undefined);
 });
+
+test('older saves migrate without losing progress and notebook survives export',()=>{
+  const old=g.newGame(1000);delete old.notebook;old.ink=765;
+  const migrated=g.parseSave(JSON.stringify(old));assert.equal(migrated.ink,765);assert.deepEqual(migrated.notebook,{notes:[],exhibits:{},completed:0,active:null});
+  const accepted=g.startCommission(migrated,'walk');assert.deepEqual(g.parseSave(g.serialize(accepted)),accepted);
+});
+test('commissions count only accepted activity, pay once, and cancellation costs nothing',()=>{
+  let state=g.newGame();state.visits[0]=20;state.runs=20;
+  state=g.startCommission(state,'walk');assert.equal(g.commissionProgress(state).value,0);assert.throws(()=>g.startCommission(state,'survey'));assert.throws(()=>g.claimCommission(state));
+  for(let i=0;i<6;i++)state=g.explore(state,0,()=>0).state;
+  assert.equal(g.commissionProgress(state).ready,true);const before=structuredClone(state);
+  state=g.claimCommission(state);assert.equal(state.ink,before.ink+64);assert.equal(state.dust,before.dust+6);assert.equal(state.notebook.completed,1);assert.throws(()=>g.claimCommission(state));assert.ok(before.notebook.active);
+  state=g.startCommission(state,'restore');const cancelled=g.cancelCommission(state);assert.equal(cancelled.ink,state.ink);assert.deepEqual(cancelled.owned,state.owned);assert.equal(cancelled.notebook.active,null);
+});
+test('restoration commissions use upgrades, region commissions rotate only among open areas',()=>{
+  let state=g.newGame();state.unlocked=2;state.notebook.completed=4;
+  assert.equal(g.commissionOffer(state,'walk').region,1);assert.equal(g.commissionOffer(state,'walk').ink,116);
+  state.ink=10000;state.dust=1000;state=g.startCommission(state,'restore');
+  for(let i=0;i<3;i++)state=g.upgrade(state,'r0');
+  assert.equal(g.commissionProgress(state).ready,true);state=g.claimCommission(state);assert.equal(state.notebook.completed,5);
+});
+test('chronicles require sequence, visits, collection and local restoration; claims are one time',()=>{
+  let state=g.newGame();assert.throws(()=>g.claimChronicle(state,'note-0-0'));assert.throws(()=>g.claimChronicle(state,'invalid'));
+  state.visits[0]=35;for(let i=0;i<5;i++)state.owned[`r${i}`]={level:10,copies:0,resonance:0};
+  assert.throws(()=>g.claimChronicle(state,'note-0-1'));
+  for(let i=0;i<3;i++){const before=state.ink;state=g.claimChronicle(state,`note-0-${i}`);assert.ok(state.ink>before);assert.throws(()=>g.claimChronicle(state,`note-0-${i}`));}
+  assert.equal(state.notebook.notes.length,3);assert.equal(g.chronicleProgress(state,'note-1-0').ready,false);assert.deepEqual(g.parseSave(g.serialize(state)).notebook,state.notebook);
+});
+test('exhibitions require all three relics at each tier and never consume them',()=>{
+  let state=g.newGame();assert.throws(()=>g.claimExhibition(state,'letters'));
+  for(const id of ['r1','r20','r25'])state.owned[id]={level:1,copies:2,resonance:0};
+  const owned=structuredClone(state.owned);state=g.claimExhibition(state,'letters');assert.deepEqual(state.owned,owned);assert.throws(()=>g.claimExhibition(state,'letters'));
+  for(const level of [5,12]){for(const id of ['r1','r20','r25'])state.owned[id].level=level;state=g.claimExhibition(state,'letters');}
+  assert.equal(state.notebook.exhibits.letters,3);assert.throws(()=>g.claimExhibition(state,'letters'));assert.deepEqual(g.parseSave(g.serialize(state)).notebook,state.notebook);
+});
+test('malformed notebook imports are rejected instead of erasing or overpaying progress',()=>{
+  const cases=[null,{notes:['unknown'],exhibits:{},completed:0,active:null},{notes:[],exhibits:{letters:4},completed:0,active:null},{notes:[],exhibits:{},completed:-1,active:null}];
+  for(const notebook of cases){const state=g.newGame();state.notebook=notebook;assert.throws(()=>g.serialize(state));}
+  for(const patch of [{baseline:1},{ink:999999},{region:5},{id:'unknown'}]){const state=g.startCommission(g.newGame(),'walk');Object.assign(state.notebook.active,patch);assert.throws(()=>g.serialize(state));}
+});

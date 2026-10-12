@@ -79,7 +79,7 @@ try{
   await check('Mobile navigation, modal and all pages fit 390px',async()=>{
     await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
     await evaluate("document.querySelector('[data-tab=home]').click()");
-    for(const tab of ['home','explore','collection','research','journal']){await evaluate(`document.querySelector('[data-tab=${tab}]').click()`);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`overflow on ${tab}`);}
+    for(const tab of ['home','explore','collection','research','journal','notebook']){await evaluate(`document.querySelector('[data-tab=${tab}]').click()`);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,`overflow on ${tab}`);}
     await evaluate("document.querySelector('[data-tab=home]').click()");await wait(4600);await shot('mobile-home');
     await click('[data-relic="r0"]');assert.equal(await evaluate("document.querySelector('dialog').getBoundingClientRect().width<=innerWidth"),true);await shot('mobile-relic');await close();
   });
@@ -115,6 +115,22 @@ try{
     await click('[data-action="settings"]');assert.equal(await evaluate("!!document.querySelector('.discovery-stage')"),false);await close();
     await call('Emulation.setEmulatedMedia',{features:[]});
   });
+  await check('Notebook migration, restoration commission, chronicles and exhibitions',async()=>{
+    const legacy=newGame();delete legacy.notebook;legacy.ink=10000;legacy.dust=1000;legacy.visits[0]=5;legacy.runs=5;legacy.unlocked=5;
+    for(const id of ['r0','r1','r20','r25'])legacy.owned[id]={level:2,copies:0,resonance:0};
+    const fixture=await call('Page.addScriptToEvaluateOnNewDocument',{source:`localStorage.setItem('still-archive.save.v1',${JSON.stringify(JSON.stringify(legacy))})`});
+    await loadPage('Page.reload');await until("!!document.querySelector('[data-tab=notebook]')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fixture.identifier});
+    assert.equal((await save()).ink,10000);
+    await click('[data-tab="notebook"]');await shot('notebook-desktop');await click('[data-commission="restore"]');
+    await click('[data-tab="collection"]');await click('[data-relic="r0"]');for(let i=0;i<3;i++)await click('[data-upgrade="r0"]');await close();
+    await click('[data-tab="notebook"]');await click('[data-action="claim-commission"]');assert.equal((await save()).notebook.completed,1);
+    await click('[data-desk="chronicles"]');await click('[data-note="note-0-0"]');assert.deepEqual((await save()).notebook.notes,['note-0-0']);assert.ok(await evaluate("document.querySelector('.field-note-text').textContent.includes('지도')"));
+    await click('[data-desk="exhibitions"]');await click('[data-exhibition="letters"]');assert.equal((await save()).notebook.exhibits.letters,1);assert.equal((await save()).owned.r1.level,2);await shot('exhibitions-desktop');
+    await click('[data-desk="commissions"]');await click('[data-commission="walk"]');const active=(await save()).notebook.active;
+    await loadPage('Page.reload');await until("!!document.querySelector('[data-tab=notebook]')");assert.deepEqual((await save()).notebook.active,active);await click('[data-tab="notebook"]');await click('[data-action="cancel-commission"]');assert.equal((await save()).notebook.active,null);
+    await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    for(const section of ['commissions','chronicles','exhibitions']){await click(`[data-desk="${section}"]`);assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);await shot(`notebook-${section}-mobile`);}
+  });
   await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});await evaluate("document.querySelector('[data-tab=home]').click()");await wait(4600);await shot('desktop-final');
   }
   await check('Standalone HTML is self-contained and restores progress',async()=>{
@@ -128,8 +144,9 @@ try{
     assert.equal((await save()).runs,0);
     await click('[data-action="explore"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===1");
     await click('[data-relic="r0"]');await click('[data-upgrade="r0"]');await close();
+    await click('[data-tab="notebook"]');await click('[data-commission="survey"]');
     await loadPage('Page.reload');await until("!!document.querySelector('[data-action=explore]')");
-    assert.equal((await save()).runs,1);assert.equal((await save()).owned.r0.level,2);
+    assert.equal((await save()).runs,1);assert.equal((await save()).owned.r0.level,2);assert.equal((await save()).notebook.active.id,'survey');
     assert.equal(await evaluate("performance.getEntriesByType('resource').filter(r=>r.name.startsWith('http')).length"),0);
   });
   assert.equal(errors.length,0,JSON.stringify(errors));
