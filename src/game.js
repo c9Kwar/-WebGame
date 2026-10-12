@@ -3,6 +3,8 @@ import { VERSION, REGIONS, RELICS, RARITIES, RESEARCH, MILESTONES, CHRONICLES, E
 export const MAX_LEVEL = 20;
 export const MAX_RESONANCE = 3;
 export const EXPEDITION_MS = 2800;
+export const MAX_READINESS = 10;
+export const READINESS_INTERVAL_MS = 2 * 60 * 1000;
 export const REST_CAP_MS = 8 * 60 * 60 * 1000;
 const clone = state => structuredClone(state);
 const bounded = (n, max = 1e9) => Number.isSafeInteger(n) && n >= 0 && n <= max;
@@ -10,9 +12,29 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 
 export function newGame(now = Date.now()) {
   return { version: VERSION, name: '기록가', ink: 120, dust: 12, xp: 0, runs: 0, upgrades: 0,
+    readiness: { amount: MAX_READINESS, updatedAt: now },
     owned: { r0: { level: 1, copies: 0, resonance: 0 } }, equipped: ['r0'],
     research: { focus: 0, ink: 0, dust: 0, rest: 0 }, visits: [0, 0, 0, 0, 0, 0], pity: [0, 0, 0, 0, 0, 0],
     notebook: { notes: [], exhibits: {}, completed: 0, active: null }, unlocked: 0, claimed: [], history: [], createdAt: now, lastSeen: now, tutorialDismissed: false, reducedMotion: false };
+}
+export function readiness(state, now = Date.now()) {
+  const saved = state.readiness, time = Math.max(saved.updatedAt,now);
+  const recovered = Math.floor((time-saved.updatedAt)/READINESS_INTERVAL_MS);
+  const amount = Math.min(MAX_READINESS,saved.amount+recovered);
+  const updatedAt = amount === MAX_READINESS ? time : saved.updatedAt + recovered*READINESS_INTERVAL_MS;
+  return { amount, updatedAt, nextIn: amount === MAX_READINESS ? 0 : READINESS_INTERVAL_MS-(time-updatedAt) };
+}
+export function restockCost(state, now = Date.now()) {
+  const amount = Math.min(3,MAX_READINESS-readiness(state,now).amount);
+  return amount ? {amount,ink:REGIONS[state.unlocked].ink*3*amount} : null;
+}
+export function restock(state, now = Date.now()) {
+  const cost=restockCost(state,now), supply=readiness(state,now);
+  assert(cost, '준비도가 이미 가득 찼습니다.');
+  assert(state.ink>=cost.ink, '보급에 필요한 잉크가 부족합니다. 자연 회복을 기다려 주세요.');
+  const next=clone(state);next.ink-=cost.ink;
+  next.readiness={amount:supply.amount+cost.amount,updatedAt:supply.amount+cost.amount===MAX_READINESS?Math.max(now,supply.updatedAt):supply.updatedAt};
+  return finish(next,now);
 }
 export function relicPower(state, id) {
   const item = state.owned[id];
@@ -91,7 +113,10 @@ function pick(items, rng) {
 }
 export function explore(state, regionId, rng = Math.random, now = Date.now()) {
   assert(Number.isInteger(regionId) && regionId >= 0 && regionId <= state.unlocked && REGIONS[regionId], '아직 열리지 않은 탐사지입니다.');
+  const supplies = readiness(state,now);
+  assert(supplies.amount > 0, '탐사 준비도가 부족합니다. 2분마다 1씩 회복돼요.');
   const next = clone(state), pool = RELICS.filter(r => r.region === regionId), missing = pool.filter(r => !next.owned[r.id]);
+  next.readiness = { amount: supplies.amount-1, updatedAt: supplies.updatedAt };
   const guaranteed = missing.length > 0 && (next.pity[regionId] >= 5 || next.runs === 0);
   const relic = pick(guaranteed ? missing : pool, rng), isNew = !next.owned[relic.id];
   const rewards = expectedRewards(state, regionId);
@@ -207,6 +232,10 @@ export function validateSave(raw) {
   assert(Array.isArray(raw.claimed) && new Set(raw.claimed).size === raw.claimed.length && raw.claimed.every(id => MILESTONES.some(m => m.id === id)), '여정 보상 기록이 올바르지 않습니다.');
   state.claimed = [...raw.claimed];
   state.history = (Array.isArray(raw.history) ? raw.history : []).filter(h => h && RELICS.some(r => r.id === h.relic) && typeof h.isNew === 'boolean' && bounded(h.region, 5) && bounded(h.at, 1e14) && ['ink','dust','xp'].every(k => bounded(h[k]))).slice(0, 30).map(h => ({ relic:h.relic, isNew:h.isNew, guaranteed:!!h.guaranteed, region:h.region, at:h.at, ink:h.ink, dust:h.dust, xp:h.xp }));
+  if(raw.readiness !== undefined) {
+    assert(raw.readiness && bounded(raw.readiness.amount,MAX_READINESS) && bounded(raw.readiness.updatedAt,1e14), '탐사 준비도 기록이 올바르지 않습니다.');
+    state.readiness = {amount:raw.readiness.amount,updatedAt:raw.readiness.updatedAt};
+  }
   // Additive migration: version-1 saves from before the notebook keep all progress.
   if (raw.notebook !== undefined) {
     const book = raw.notebook;

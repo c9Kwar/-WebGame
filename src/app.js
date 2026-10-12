@@ -93,9 +93,32 @@ function header() {
 function heading(kicker, title, subtitle, extra = '') {
   return `<div class="page-heading"><div><div class="eyebrow">${kicker}</div><h1>${title}</h1><p>${subtitle}</p></div>${extra}</div>`;
 }
+function recoveryText() {
+  const supply=game.readiness(state), seconds=Math.ceil(supply.nextIn/1000);
+  return supply.amount===game.MAX_READINESS?'준비를 모두 마쳤어요':`다음 회복 ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} · 2분마다 +1`;
+}
+function readinessPanel() {
+  const supply=game.readiness(state),cost=game.restockCost(state);
+  return `<div class="readiness-panel ${supply.amount===0?'exhausted':''}"><div><strong>탐사 준비도 <span class="readiness-count">${supply.amount} / ${game.MAX_READINESS}</span></strong><span class="readiness-next">${recoveryText()}</span></div><p>탐사 1회당 준비도 1 · 귀환 보상과 함께 차감</p><button class="readiness-restock button outlined" data-action="restock" ${!cost||state.ink<cost.ink?'disabled':''}>${cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)} 소모`:'보급이 가득 찼어요'}</button><small>보급 비용은 탐사 수익보다 높아요. 복원할 잉크를 남겨 두세요.</small><button class="readiness-alternative text-button" data-tab="notebook" ${supply.amount?'hidden':''}>쉬는 동안 수첩·전시 살펴보기 ${icon('arrow')}</button></div>`;
+}
+function refreshReadiness() {
+  if(document.hidden || ui.active)return;
+  const supply=game.readiness(state), panel=$('.readiness-panel');
+  if(!panel)return;
+  $('.readiness-count',panel).textContent=`${supply.amount} / ${game.MAX_READINESS}`;
+  $('.readiness-next',panel).textContent=recoveryText();
+  panel.classList.toggle('exhausted',supply.amount===0);
+  $('.readiness-alternative',panel).hidden=supply.amount>0;
+  const cost=game.restockCost(state),restock=$('[data-action="restock"]',panel);
+  restock.disabled=!cost||state.ink<cost.ink;restock.textContent=cost?`보급 +${cost.amount} · 잉크 ${fmt(cost.ink)} 소모`:'보급이 가득 찼어요';
+  const explore=$('[data-action="explore"]'),auto=$('[data-action="auto"]');
+  if(explore){explore.disabled=supply.amount===0;$('span',explore).textContent=supply.amount?'탐사 떠나기':'준비도를 회복하는 중';}
+  if(auto){auto.disabled=supply.amount===0;auto.textContent=supply.amount?`${Math.min(5,supply.amount)}회 이어서 탐사`:'잠시 쉬어 가요';}
+}
 function expeditionButton() {
   if (ui.active) return `<button class="button primary explore-button" disabled>${icon('compass','turning')}<span>기억을 찾는 중…</span></button><button class="auto-button" data-action="stop-auto">${ui.auto>0?`연속 탐사 중 · ${ui.auto}회 남음 · 멈추기`:'이번 탐사 후 돌아옵니다'}</button>`;
-  return `<button class="button primary explore-button" data-action="explore">${icon('compass')}<span>탐사 떠나기</span>${icon('arrow')}</button><button class="auto-button" data-action="auto">5회 이어서 탐사 ${icon('chevron')}</button>`;
+  const amount=game.readiness(state).amount;
+  return `<button class="button primary explore-button" data-action="explore" ${amount?'':'disabled'}>${icon('compass')}<span>${amount?'탐사 떠나기':'준비도를 회복하는 중'}</span>${icon('arrow')}</button><button class="auto-button" data-action="auto" ${amount?'':'disabled'}>${amount?`${Math.min(5,amount)}회 이어서 탐사`:'잠시 쉬어 가요'} ${icon('chevron')}</button>`;
 }
 function expeditionJourney() {
   if (!ui.active) return '';
@@ -110,7 +133,7 @@ function expeditionJourney() {
 function hero() {
   const region = REGIONS[ui.region], reward = game.expectedRewards(state, ui.region);
   const complete = collectionCount(ui.region) === 5;
-  return `<section class="hero ${ui.active?'is-traveling':''}" aria-labelledby="hero-title">${sceneArt(ui.region)}<div class="hero-frame"></div><div class="hero-topline"><span>CHAPTER ${region.chapter} <i></i> CITY EXPLORATION</span><span>${String(ui.region+1).padStart(2,'0')} / 06</span></div><div class="hero-copy"><p class="hero-subtitle">${region.subtitle}</p><h2 id="hero-title">${region.name}</h2><p class="hero-description">${region.description}</p><div class="hero-rewards"><span>탐사 보상</span>${money('ink',reward.ink)}${money('dust',reward.dust)}<span class="xp-label">+${reward.xp} XP</span></div><div class="hero-actions">${expeditionButton()}</div></div><div class="hero-bottom"><span class="expedition-status">${ui.active?REGIONS[ui.active.region].lines[0]:'어떤 발견이 기다릴까요. 가벼운 마음으로 떠나세요.'}</span><span>${complete?'수집 완료':`발견한 유물 ${collectionCount(ui.region)} / 5`}</span></div>${expeditionJourney()}<div class="expedition-progress"><i style="width:${ui.active?Math.min(100,(Date.now()-ui.active.started)/game.EXPEDITION_MS*100):0}%"></i></div></section>`;
+  return `<section class="hero ${ui.active?'is-traveling':''}" aria-labelledby="hero-title">${sceneArt(ui.region)}<div class="hero-frame"></div><div class="hero-topline"><span>CHAPTER ${region.chapter} <i></i> CITY EXPLORATION</span><span>${String(ui.region+1).padStart(2,'0')} / 06</span></div><div class="hero-copy"><p class="hero-subtitle">${region.subtitle}</p><h2 id="hero-title">${region.name}</h2><p class="hero-description">${region.description}</p><div class="hero-rewards"><span>탐사 보상</span>${money('ink',reward.ink)}${money('dust',reward.dust)}<span class="xp-label">+${reward.xp} XP</span></div>${readinessPanel()}<div class="hero-actions">${expeditionButton()}</div></div><div class="hero-bottom"><span class="expedition-status">${ui.active?REGIONS[ui.active.region].lines[0]:'어떤 발견이 기다릴까요. 가벼운 마음으로 떠나세요.'}</span><span>${complete?'수집 완료':`발견한 유물 ${collectionCount(ui.region)} / 5`}</span></div>${expeditionJourney()}<div class="expedition-progress"><i style="width:${ui.active?Math.min(100,(Date.now()-ui.active.started)/game.EXPEDITION_MS*100):0}%"></i></div></section>`;
 }
 function journeyPanel() {
   const next = REGIONS[state.unlocked + 1], owned=Object.keys(state.owned).length;
@@ -223,10 +246,10 @@ function showRelic(id) {
   openDialog(`<div class="relic-detail"><div class="detail-art">${relicArt(relic,'dialog')}<span>${REGIONS[relic.region].english}</span></div><div class="detail-copy"><span class="eyebrow">NO. ${relic.number} <i>·</i> ${RARITIES[relic.rarity].label}</span><h2 id="dialog-title">${relic.name}</h2><p class="relic-quote">“${relic.quote}”</p>${item?`<div class="detail-stats"><div><small>복원 단계</small><strong>${item.level}<span> / ${game.MAX_LEVEL}</span></strong></div><div><small>유물 공명력</small><strong>${game.relicPower(state,id)}</strong></div><div><small>공명</small><strong class="detail-stars">${'✦'.repeat(item.resonance)}${'✧'.repeat(game.MAX_RESONANCE-item.resonance)}</strong></div></div><div class="detail-upgrade"><div><h3>기억 복원 <span>확정 성공</span></h3><p>${cost?`공명력 ${game.relicPower(state,id)} → <b>${game.relicPower(state,id)+9}</b>`:'모든 기억을 완전히 복원했습니다.'}</p></div><button class="button primary" data-upgrade="${id}" ${!affordable?'disabled':''}>${cost?'복원하기':'복원 완료'}${cost?`${money('ink',cost.ink)}${money('dust',cost.dust)}`:icon('check')}</button>${cost&&!affordable?'<small>재료가 모자라요. 도시에서 기억을 조금 더 모아 주세요.</small>':''}</div><div class="detail-resonate"><div><strong>기억 공명 <small>공명력 +18</small></strong><p>${item.resonance===game.MAX_RESONANCE?'모든 공명이 깨어났습니다.':`중복 기억 ${item.copies} / ${2+item.resonance}개`}</p></div><button class="button small outlined" data-resonate="${id}" ${canResonate?'':'disabled'}>${item.resonance===game.MAX_RESONANCE?'공명 완료':'공명하기'}</button></div><button class="button full ${equipped?'outlined':'dark'}" data-equip="${id}">${icon(equipped?'check':'plus')}${equipped?'동행 해제':'이 기억과 동행하기'}</button>`:`<div class="locked-detail">${icon('lock')}<h3>아직 닿지 않은 기억</h3><p>${REGIONS[relic.region].name}에서 찾을 수 있습니다.</p><button class="button dark" data-find="${relic.region}" ${relic.region>state.unlocked?'disabled':''}>${relic.region>state.unlocked?`공명력 ${REGIONS[relic.region].power}에 탐사지 해금`:'이 거리 탐사하기'}</button></div>`}</div></div>`,'relic-dialog');
 }
 function showSettings() {
-  openDialog(`<div class="settings-content"><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title">서고의 작은 설정</h2><label class="field-label" for="player-name">기록가의 이름</label><form id="name-form"><input id="player-name" maxlength="16" value="${esc(state.name)}" required autocomplete="nickname"><button class="button dark" type="submit">이름 저장</button></form><div class="setting-row"><div><strong>발견의 소리</strong><p>유물을 찾으면 짧은 종소리가 울려요.</p></div><button class="toggle ${ui.sound?'on':''}" data-action="toggle-sound" role="switch" aria-checked="${ui.sound}" aria-label="발견의 소리">${ui.sound?'켜짐':'꺼짐'}</button></div><div class="setting-row"><div><strong>잔잔한 움직임</strong><p>화면 애니메이션을 줄입니다.</p></div><button class="toggle ${state.reducedMotion?'on':''}" data-action="toggle-motion" role="switch" aria-checked="${state.reducedMotion}" aria-label="움직임 줄이기">${state.reducedMotion?'켜짐':'꺼짐'}</button></div><div class="save-info">${icon('download')}<p>진행은 이 브라우저에 자동 저장됩니다. 기기를 옮기거나 브라우저 데이터를 지우기 전, 세이브 파일을 백업해 주세요. 계정이나 서버 동기화는 사용하지 않습니다.</p></div><div class="settings-actions"><button class="button outlined" data-action="export">${icon('download')} 세이브 내보내기</button><label class="button outlined import-label">${icon('upload')} 세이브 가져오기<input id="import-save" type="file" accept=".json,application/json"></label></div>${preservedCorrupt?'<div class="recovery-actions"><button class="text-button" data-action="export-recovery">이전 원본 내려받기</button><button class="button outlined" data-action="accept-new">원본 보관 후 현재 진행 저장</button></div>':''}<button class="text-button help-link" data-action="help">${icon('help')} 플레이 방법과 확률 안내</button><p class="version-label">잔향 서고 · v1.2.0 · 오리지널 세계관과 일러스트</p></div>`,'settings-dialog');
+  openDialog(`<div class="settings-content"><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title">서고의 작은 설정</h2><label class="field-label" for="player-name">기록가의 이름</label><form id="name-form"><input id="player-name" maxlength="16" value="${esc(state.name)}" required autocomplete="nickname"><button class="button dark" type="submit">이름 저장</button></form><div class="setting-row"><div><strong>발견의 소리</strong><p>유물을 찾으면 짧은 종소리가 울려요.</p></div><button class="toggle ${ui.sound?'on':''}" data-action="toggle-sound" role="switch" aria-checked="${ui.sound}" aria-label="발견의 소리">${ui.sound?'켜짐':'꺼짐'}</button></div><div class="setting-row"><div><strong>잔잔한 움직임</strong><p>화면 애니메이션을 줄입니다.</p></div><button class="toggle ${state.reducedMotion?'on':''}" data-action="toggle-motion" role="switch" aria-checked="${state.reducedMotion}" aria-label="움직임 줄이기">${state.reducedMotion?'켜짐':'꺼짐'}</button></div><div class="save-info">${icon('download')}<p>진행은 이 브라우저에 자동 저장됩니다. 기기를 옮기거나 브라우저 데이터를 지우기 전, 세이브 파일을 백업해 주세요. 계정이나 서버 동기화는 사용하지 않습니다.</p></div><div class="settings-actions"><button class="button outlined" data-action="export">${icon('download')} 세이브 내보내기</button><label class="button outlined import-label">${icon('upload')} 세이브 가져오기<input id="import-save" type="file" accept=".json,application/json"></label></div>${preservedCorrupt?'<div class="recovery-actions"><button class="text-button" data-action="export-recovery">이전 원본 내려받기</button><button class="button outlined" data-action="accept-new">원본 보관 후 현재 진행 저장</button></div>':''}<button class="text-button help-link" data-action="help">${icon('help')} 플레이 방법과 확률 안내</button><p class="version-label">잔향 서고 · v1.3.0 · 오리지널 세계관과 일러스트</p></div>`,'settings-dialog');
 }
 function showHelp() {
-  openDialog(`<div class="settings-content"><span class="eyebrow">A QUIET GUIDE</span><h2 id="dialog-title">천천히, 이 세 단계를.</h2><ol class="help-steps"><li><strong>탐사하고</strong><p>매 탐사마다 유물 하나와 잉크, 잔향을 얻어요. 탐사는 약 3초가 걸리고, 입장료나 실패는 없습니다.</p></li><li><strong>기억을 모으고</strong><p>유물 세 가지와 동행할 수 있어요. 새 유물은 빈 동행 칸에 자동으로 들어갑니다. 모은 유물은 동행하지 않아도 종당 공명력 +4를 줍니다.</p></li><li><strong>조금 더 선명하게</strong><p>잉크와 잔향으로 유물을 복원하면 공명력 +9. 중복 유물 2·3·4개로 공명하면 단계마다 +18. 모든 강화는 100% 성공합니다.</p></li></ol><h3>발견 확률</h3><p class="help-text">각 거리에는 흔적 2종, 기억 2종, 영원 1종이 있어요. 일반 탐사에서는 각 유물의 가중치가 6:6:3:3:1로, 개별 확률은 31.58%·31.58%·15.79%·15.79%·5.26%입니다. 새 유물이 없는 탐사를 5회 연속 했다면, 6회째에는 미발견 유물만 같은 가중치로 추첨합니다. 첫 탐사도 미발견 유물을 확정 발견해요.</p><h3>자리를 비운 동안</h3><p class="help-text">첫 탐사 후부터 서고가 쉬는 시간에 분당 잉크 2개, 10분당 잔향 1개를 모읍니다. 최대 8시간까지 쌓이고 창가의 시간 연구로 잉크가 늘어나요. 5회 연속 탐사는 숨긴 탭에서는 잠시 멈추며, 돌아오면 이어갑니다.</p><button class="button dark full" data-action="close-dialog">좋아요, 내 속도로 해 볼게요 ${icon('arrow')}</button></div>`,'settings-dialog');
+  openDialog(`<div class="settings-content"><span class="eyebrow">A QUIET GUIDE</span><h2 id="dialog-title">천천히, 이 세 단계를.</h2><ol class="help-steps"><li><strong>탐사하고</strong><p>매 탐사마다 유물 하나와 잉크, 잔향을 얻어요. 탐사는 약 3초가 걸리고, 탐사 1회마다 준비도 1을 사용합니다. 준비도는 최대 10까지, 2분마다 1씩 회복해요. 잉크로 최대 3회분을 보급할 수도 있지만, 1회분 비용은 열린 최상위 지역의 기본 잉크 보상 3배입니다. 탐사 수익보다 비싸므로 복원과 보급 중 필요한 쪽을 선택하세요. 귀환 보상과 함께 차감되며, 탐사 중 새로고침하면 보상과 차감 없이 돌아옵니다.</p></li><li><strong>기억을 모으고</strong><p>유물 세 가지와 동행할 수 있어요. 새 유물은 빈 동행 칸에 자동으로 들어갑니다. 모은 유물은 동행하지 않아도 종당 공명력 +4를 줍니다.</p></li><li><strong>조금 더 선명하게</strong><p>잉크와 잔향으로 유물을 복원하면 공명력 +9. 중복 유물 2·3·4개로 공명하면 단계마다 +18. 모든 강화는 100% 성공합니다.</p></li></ol><h3>발견 확률</h3><p class="help-text">각 거리에는 흔적 2종, 기억 2종, 영원 1종이 있어요. 일반 탐사에서는 각 유물의 가중치가 6:6:3:3:1로, 개별 확률은 31.58%·31.58%·15.79%·15.79%·5.26%입니다. 새 유물이 없는 탐사를 5회 연속 했다면, 6회째에는 미발견 유물만 같은 가중치로 추첨합니다. 첫 탐사도 미발견 유물을 확정 발견해요.</p><h3>자리를 비운 동안</h3><p class="help-text">첫 탐사 후부터 서고가 쉬는 시간에 분당 잉크 2개, 10분당 잔향 1개를 모읍니다. 최대 8시간까지 쌓이고 창가의 시간 연구로 잉크가 늘어나요. 연속 탐사는 남은 준비도 안에서 최대 5회 진행하고, 숨긴 탭에서는 잠시 멈추며, 돌아오면 이어갑니다.</p><button class="button dark full" data-action="close-dialog">좋아요, 내 속도로 해 볼게요 ${icon('arrow')}</button></div>`,'settings-dialog');
 }
 function showStory(index) {
   const story=STORIES[index];
@@ -236,8 +259,10 @@ function showStory(index) {
 function startExploration(auto=false) {
   if(ui.active)return;
   if(ui.region>state.unlocked)return;
+  const available=game.readiness(state).amount;
+  if(!available){ui.auto=0;render();toast('준비도를 모두 사용했어요. 2분마다 1씩 회복됩니다.');return;}
   const frameJourney = auto || ui.auto === 0;
-  if(auto)ui.auto=5;
+  if(auto)ui.auto=Math.min(5,available);
   if(ui.auto>0)ui.auto--;
   ui.active={region:ui.region,started:Date.now()}; render();
   if(frameJourney)$('.hero')?.scrollIntoView({block:'center',behavior:'instant'});
@@ -253,10 +278,13 @@ function completeExploration() {
   if(!ui.active)return;
   clearInterval(tickTimer);
   const before=state.unlocked;
-  const {state:next,result}=game.explore(state,ui.active.region);
+  let next,result;
+  try{({state:next,result}=game.explore(state,ui.active.region));}
+  catch(error){stopTimers();render();toast(error.message);return;}
   ui.active=null; ui.latest=result; commit(next); revealDiscovery(result); chime(RELICS.find(r=>r.id===result.relic).rarity);
   if(result.isNew)toast(`새로운 기억 · ${RELICS.find(r=>r.id===result.relic).name}`,'discovery');
   if(state.unlocked>before)toast(`새로운 길이 열렸어요 · ${REGIONS[state.unlocked].name}`,'discovery');
+  if(game.readiness(state).amount===0){ui.auto=0;toast('준비도를 모두 썼어요. 유물 복원과 전시를 살펴보며 쉬어 가세요.');}
   if(ui.auto>0&&!document.hidden)startExploration();
 }
 function changeTab(tab) {
@@ -295,6 +323,7 @@ document.addEventListener('click',event=>{
     if(d.action){switch(d.action){
       case 'claim-commission':commit(game.claimCommission(state));toast('답장을 보냈어요. 의뢰 보상을 받았습니다.');break;
       case 'cancel-commission':commit(game.cancelCommission(state));toast('편지를 내려놓았어요. 다른 의뢰를 고를 수 있습니다.');break;
+      case 'restock':commit(game.restock(state));toast('잉크를 소모해 탐사 보급을 꾸렸어요.');break;
       case 'explore':startExploration();break;
       case 'auto':startExploration(true);break;
       case 'stop-auto':ui.auto=0;render();toast('이번 탐사를 마치고 돌아올게요.');break;
@@ -330,7 +359,7 @@ document.addEventListener('submit',event=>{
   if(event.target.id==='name-form'){event.preventDefault();const name=$('#player-name').value.trim();if(!name){toast('이름을 한 글자 이상 적어 주세요.');return;}commit({...state,name:name.slice(0,16)});showSettings();toast('새 이름을 기록했어요.');}
 });
 dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
-dialog.addEventListener('close',()=>{ui.importing=null;});
+dialog.addEventListener('close',()=>{if(!dialog.open)ui.importing=null;});
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){state.lastSeen=Date.now();persist();}
   else {const paused=game.rest(state);state=paused.state;persist();render();if(paused.reward)toast(`기다리는 동안 잉크 ${paused.reward.ink}개, 잔향 ${paused.reward.dust}개를 모았어요.`);if(ui.auto>0&&!ui.active)startExploration();}
@@ -340,6 +369,7 @@ window.addEventListener('storage',event=>{
   if(event.key!==SAVE_KEY||!event.newValue)return;
   try{const incoming=game.parseSave(event.newValue);stopTimers();state=incoming;ui.latest=null;ui.region=Math.min(ui.region,state.unlocked);if(dialog.open)dialog.close();render();toast('다른 탭의 최신 기록을 반영했습니다.');}catch{/* Preserve this valid save when another tab writes invalid data. */}
 });
+setInterval(refreshReadiness,1000);
 saveTimer=setInterval(()=>{if(!document.hidden){state.lastSeen=Date.now();persist();}},15000);
 persist();render();
 if(rested.reward)setTimeout(()=>toast(`돌아오셨군요. 서고가 잉크 ${rested.reward.ink}개와 잔향 ${rested.reward.dust}개를 모아 두었어요.`,'discovery'),500);

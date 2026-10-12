@@ -18,7 +18,7 @@ test('sixth expedition since last discovery guarantees an unowned relic',()=>{
 });
 test('completed region continues giving duplicates and never selects empty pool',()=>{
   let state=g.newGame();for(const r of RELICS.filter(r=>r.region===0))state.owned[r.id]={level:1,copies:0,resonance:0};
-  for(let i=0;i<30;i++){const r=g.explore(state,0,()=>.9999);assert.equal(r.result.isNew,false);assert.equal(r.result.relic,'r4');state=r.state;}
+  for(let i=0;i<30;i++){const r=g.explore(state,0,()=>.9999,state.readiness.updatedAt+g.READINESS_INTERVAL_MS);assert.equal(r.result.isNew,false);assert.equal(r.result.relic,'r4');state=r.state;}
   assert.equal(state.owned.r4.copies,30);assert.equal(state.pity[0],0);
 });
 test('duplicate memories give copies and rarity-specific bonus dust',()=>{
@@ -87,7 +87,7 @@ test('all relics have unique identities and each area has exact rarity distribut
 });
 test('collection pity bounds full collection even with worst-case repeated draws',()=>{
   let state=g.newGame();state.unlocked=5;
-  for(let region=0;region<6;region++)for(let run=0;run<30;run++)state=g.explore(state,region,()=>0).state;
+  for(let region=0;region<6;region++)for(let run=0;run<30;run++)state=g.explore(state,region,()=>0,state.readiness.updatedAt+g.READINESS_INTERVAL_MS).state;
   assert.equal(Object.keys(state.owned).length,30);
 });
 test('malformed history is filtered without executing markup or preserving foreign fields',()=>{
@@ -133,4 +133,36 @@ test('malformed notebook imports are rejected instead of erasing or overpaying p
   const cases=[null,{notes:['unknown'],exhibits:{},completed:0,active:null},{notes:[],exhibits:{letters:4},completed:0,active:null},{notes:[],exhibits:{},completed:-1,active:null}];
   for(const notebook of cases){const state=g.newGame();state.notebook=notebook;assert.throws(()=>g.serialize(state));}
   for(const patch of [{baseline:1},{ink:999999},{region:5},{id:'unknown'}]){const state=g.startCommission(g.newGame(),'walk');Object.assign(state.notebook.active,patch);assert.throws(()=>g.serialize(state));}
+});
+
+test('readiness caps ten expeditions and empty attempts award nothing or advance no pity',()=>{
+  const now=100000;let state=g.newGame(now);
+  for(let i=0;i<10;i++)state=g.explore(state,0,()=>0,now+i).state;
+  assert.equal(g.readiness(state,now+10).amount,0);const before=structuredClone(state);
+  assert.throws(()=>g.explore(state,0,()=>0,now+10),/준비도/);assert.deepEqual(state,before);
+});
+test('readiness recovers exact intervals, retains fractions, caps offline and cannot bank at full',()=>{
+  let state=g.newGame(1000);state.readiness={amount:0,updatedAt:1000};
+  assert.equal(g.readiness(state,120999).amount,0);assert.equal(g.readiness(state,121000).amount,1);
+  state=g.explore(state,0,()=>0,181000).state;assert.equal(g.readiness(state,181000).nextIn,60000);
+  assert.equal(g.readiness(state,241000).amount,1);assert.equal(g.readiness(state,1e8).amount,10);
+  const full=g.newGame(1000), spent=g.explore(full,0,()=>0,1000000).state;
+  assert.equal(g.readiness(spent,1000001).amount,9);assert.equal(g.readiness(spent,1000001).nextIn,119999);
+  assert.equal(g.readiness(spent,999999).amount,9);
+});
+test('readiness survives reload, legacy saves start full, malformed supplies reject import',()=>{
+  let state=g.newGame(1000);state=g.explore(state,0,()=>0,2000).state;
+  assert.deepEqual(g.parseSave(g.serialize(state)).readiness,state.readiness);
+  delete state.readiness;assert.equal(g.parseSave(JSON.stringify(state)).readiness.amount,10);
+  for(const readiness of [null,{amount:11,updatedAt:1000},{amount:-1,updatedAt:1000},{amount:1,updatedAt:-1},{amount:1.5,updatedAt:1000}]){state.readiness=readiness;assert.throws(()=>g.serialize(state));}
+});
+test('restocking costs more than its maximum possible exploration income and never gives free energy',()=>{
+  for(let region=0;region<6;region++){
+    let state=g.newGame(1000);state.unlocked=region;state.ink=100000;state.readiness.amount=0;state.research.ink=10;
+    const cost=g.restockCost(state,1000), before=structuredClone(state);
+    assert.ok(cost.ink>cost.amount*(g.expectedRewards(state,region).ink+REGIONS[region].ink*2/6));
+    state=g.restock(state,1000);assert.equal(state.readiness.amount,3);assert.equal(state.ink,before.ink-cost.ink);assert.equal(before.readiness.amount,0);
+    state.readiness.amount=9;assert.equal(g.restockCost(state,1000).amount,1);state=g.restock(state,1000);assert.equal(state.readiness.amount,10);assert.throws(()=>g.restock(state,1000));
+    state.readiness.amount=0;state.ink=0;assert.throws(()=>g.restock(state,1000));
+  }
 });

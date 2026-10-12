@@ -145,6 +145,23 @@ try{
     await click('[data-action="settings"]');assert.equal(await evaluate("!!document.querySelector('.discovery-stage')"),false);await close();
     await call('Emulation.setEmulatedMedia',{features:[]});
   });
+  await check('Readiness limits auto runs, persists on reload, recovers live and prices restocking',async()=>{
+    const limited=newGame();limited.ink=1000;limited.readiness.amount=2;
+    const fixture=await call('Page.addScriptToEvaluateOnNewDocument',{source:`const limited=${serialize(limited)};limited.readiness.updatedAt=Date.now();localStorage.setItem('still-archive.save.v1',JSON.stringify(limited));`});
+    await loadPage('Page.reload');await until("!!document.querySelector('[data-action=auto]')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:fixture.identifier});
+    assert.ok(await evaluate("document.querySelector('[data-action=auto]').textContent.includes('2회')"));
+    await click('[data-action="auto"]');await until("JSON.parse(localStorage.getItem('still-archive.save.v1')).runs===2",10000);await wait(400);
+    assert.equal((await save()).readiness.amount,0);assert.equal(await evaluate("document.querySelector('[data-action=explore]').disabled"),true);assert.equal(await evaluate("document.querySelector('[data-action=auto]').disabled"),true);
+    await loadPage('Page.reload');await until("!!document.querySelector('.readiness-panel')");assert.equal((await save()).readiness.amount,0);
+    await call('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await evaluate("document.querySelector('.readiness-panel').scrollIntoView({block:'center'})");await shot('readiness-empty-mobile');
+    const before=(await save()).ink;await click('[data-action="restock"]');assert.equal((await save()).ink,before-288);assert.equal((await save()).readiness.amount,3);
+    await click('[data-action="explore"]');await loadPage('Page.reload');await until("!!document.querySelector('.readiness-panel')");assert.equal((await save()).readiness.amount,3);assert.equal((await save()).runs,2);
+    const recovery=await call('Page.addScriptToEvaluateOnNewDocument',{source:"const s=JSON.parse(localStorage.getItem('still-archive.save.v1'));s.readiness={amount:0,updatedAt:Date.now()-118000};localStorage.setItem('still-archive.save.v1',JSON.stringify(s));"});
+    await loadPage('Page.reload');await until("!!document.querySelector('.readiness-panel')");await call('Page.removeScriptToEvaluateOnNewDocument',{identifier:recovery.identifier});
+    assert.equal(await evaluate("document.querySelector('[data-action=explore]').disabled"),true);
+    await until("!document.querySelector('[data-action=explore]').disabled",5000);assert.ok(await evaluate("document.querySelector('.readiness-count').textContent.includes('1 / 10')"));
+    await call('Emulation.setDeviceMetricsOverride',{width:1440,height:1120,deviceScaleFactor:1,mobile:false});
+  });
   await check('Notebook migration, restoration commission, chronicles and exhibitions',async()=>{
     const legacy=newGame();delete legacy.notebook;legacy.ink=10000;legacy.dust=1000;legacy.visits[0]=5;legacy.runs=5;legacy.unlocked=5;
     for(const id of ['r0','r1','r20','r25'])legacy.owned[id]={level:2,copies:0,resonance:0};
@@ -182,5 +199,5 @@ try{
   assert.equal(errors.length,0,JSON.stringify(errors));
   await fs.writeFile(path.join(artifacts,'browser-report.json'),JSON.stringify({passed:report.length,checks:report,consoleErrors:errors},null,2));
   console.log(`${report.length} browser checks passed; screenshots and report saved under artifacts/.`);
-}catch(error){console.error(error);console.error('Browser errors:',JSON.stringify(errors,null,2));if(ws&&session){try{const id=++seq;ws.send(JSON.stringify({id,method:'Runtime.evaluate',params:{expression:'document.body.innerText',returnByValue:true},sessionId:session}));}catch{}}process.exitCode=1;}
+}catch(error){if(ws&&session){try{const id=++seq;const result=await new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method:'Page.captureScreenshot',params:{format:'png'},sessionId:session}));});await fs.writeFile(path.join(artifacts,'browser-failure.png'),Buffer.from(result.data,'base64'));}catch{}}console.error(error);console.error('Browser errors:',JSON.stringify(errors,null,2));if(ws&&session){try{const id=++seq;ws.send(JSON.stringify({id,method:'Runtime.evaluate',params:{expression:'document.body.innerText',returnByValue:true},sessionId:session}));}catch{}}process.exitCode=1;}
 finally{clearTimeout(timer);ws?.close();server.closeAllConnections();server.close();try{process.kill(-browser.pid,'SIGTERM');}catch{}await wait(300);await fs.rm(profile,{recursive:true,force:true,maxRetries:3});}
